@@ -11,7 +11,7 @@ A Water Cycle Intelligence product suite for finding and tracking water observab
   - `ingest/` — data acquisition (GRACE mascons, basin units, `O_GW`/WOI, LSM output, InSAR)
   - `depletion/` — TWS trend computation and significance testing
   - `product/` — tiering, scatter, and dossier generation
-- **`stations_going_dark`** — net observability decay engine: detects station cessation, checks for
+- **`dark_basins`** — net observability decay engine: detects station cessation, checks for
   replacement, and aggregates to a basin-level net decay rate. Feeds `depletion_watchlist`'s movement
   alerts and de-/re-darkening tracking.
 - **`common`** — shared infrastructure (basin units, etc.) used across modules.
