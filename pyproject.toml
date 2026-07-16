@@ -1,0 +1,27 @@
+[project]
+name = "dark-water"
+version = "0.1.0"
+description = "Dark Depletion Watchlist: cross GRACE/GRACE-FO storage decline against groundwater monitoring darkness to find unwatched aquifer depletion."
+readme = "README.md"
+authors = [
+    { name = "rlrognstad", email = "rlrognstad@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=2.0",
+    "pandas>=2.2",
+    "xarray>=2024.7",
+    "geopandas>=1.0",
+    "shapely>=2.0",
+    "netcdf4>=1.7",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+]
+
+[build-system]
+requires = ["uv_build>=0.11.21,<0.12.0"]
+build-backend = "uv_build"
