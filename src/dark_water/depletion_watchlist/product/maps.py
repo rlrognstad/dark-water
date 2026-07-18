@@ -61,7 +61,13 @@ def plot_global_trend_map(
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     fig = plt.figure(figsize=(12, 6))
-    ax = fig.add_subplot(1, 1, 1, projection=ccrs.PlateCarree())
+    # Equal Earth, not PlateCarree: an equirectangular display projection
+    # visually inflates polar area, overweighting Greenland/Antarctic ice
+    # loss relative to the mid-latitude aquifer depletion this map is
+    # actually about. `transform=` below stays PlateCarree -- that's the
+    # data's own lat/lon coordinate system, unrelated to the display
+    # projection.
+    ax = fig.add_subplot(1, 1, 1, projection=ccrs.EqualEarth())
     ax.set_global()
     ax.coastlines(linewidth=0.5, color="#52514e")
 
