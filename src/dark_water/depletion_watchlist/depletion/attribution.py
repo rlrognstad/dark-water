@@ -26,6 +26,31 @@ import xarray as xr
 _KG_M2_TO_CM = 0.1  # GLDAS reports kg/m^2 (== mm); GRACE trend.py works in cm.
 
 
+def _to_grace_grid(da: xr.DataArray, grace_da: xr.DataArray) -> xr.DataArray:
+    """Regrid a GLDAS DataArray (1.0 deg, -180/180 lon) onto GRACE's grid (0.25 deg, 0/360 lon).
+
+    GLDAS and GRACE disagree on both spatial resolution and longitude
+    convention -- a naive elementwise op between them would silently
+    compare the wrong pixels (and, on lon, mostly nothing at all).
+    """
+    da = da.assign_coords(lon=da["lon"] % 360).sortby("lon")
+    return da.interp(lat=grace_da["lat"], lon=grace_da["lon"], method="linear")
+
+
+def _monthly(da: xr.DataArray, dim: str = "time") -> xr.DataArray:
+    """Collapse a DataArray onto one value per calendar month.
+
+    GRACE timestamps land mid-month; GLDAS timestamps land on the 1st --
+    direct alignment on raw `time` would intersect to nothing. GRACE also
+    occasionally carries two sub-monthly mascon solutions within the same
+    calendar month (an orbit/battery-driven split, not a data error), so
+    truncating the coordinate alone can produce duplicate labels; group and
+    average instead of just reassigning, so those collapse into one value.
+    """
+    months = da[dim].values.astype("datetime64[M]").astype(da[dim].dtype)
+    return da.assign_coords({dim: months}).groupby(dim).mean(dim)
+
+
 def _noah_non_gw_storage(ds: xr.Dataset) -> xr.DataArray:
     soil = (
         ds["SoilMoi0_10cm_inst"]
@@ -57,15 +82,17 @@ def groundwater_storage_anomaly(
 ) -> xr.DataArray:
     """GRACE-minus-LSM groundwater storage anomaly estimate for one model.
 
-    `grace_tws_anomaly` (cm) and `lsm_ds` must share a `dim` (time) and
-    spatial grid. Returns an anomaly, in the same units as
-    `grace_tws_anomaly`, relative to `lsm_ds`'s own mean over its time range.
+    `grace_tws_anomaly` (cm) is regridded/time-aligned against automatically;
+    `lsm_ds` may be on GLDAS's native 1.0 deg / -180-180 lon grid and monthly
+    dates. Returns an anomaly, in the same units as `grace_tws_anomaly`,
+    relative to `lsm_ds`'s own mean over its time range.
     """
     if model not in _NON_GW_STORAGE:
         raise ValueError(f"Unknown GLDAS model {model!r}, expected one of {tuple(_NON_GW_STORAGE)}")
-    non_gw_storage = _NON_GW_STORAGE[model](lsm_ds)
+    non_gw_storage = _monthly(_to_grace_grid(_NON_GW_STORAGE[model](lsm_ds), grace_tws_anomaly), dim=dim)
     non_gw_anomaly = non_gw_storage - non_gw_storage.mean(dim=dim)
-    return grace_tws_anomaly - non_gw_anomaly
+
+    return _monthly(grace_tws_anomaly, dim=dim) - non_gw_anomaly
 
 
 def ensemble_attribution(grace_tws_anomaly: xr.DataArray, lsm_datasets: dict, dim: str = "time") -> xr.Dataset:
