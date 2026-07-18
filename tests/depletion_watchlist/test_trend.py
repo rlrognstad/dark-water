@@ -58,6 +58,23 @@ def test_fit_trend_does_not_flag_positive_trend_as_declining():
     assert bool(result["significant_decline"].values[0, 0]) is False
 
 
+def test_fit_trend_line_is_deseasonalized_and_matches_the_fitted_slope():
+    rng = np.random.default_rng(4)
+    time, y = _synthetic_series(rng, true_trend=-2.0, seasonal_amplitude=4.0, noise_sigma=0.01)
+    da = xr.DataArray(y.reshape(-1, 1, 1), dims=("time", "lat", "lon"), coords={"time": time})
+
+    result = trend.fit_trend(da)
+    trend_line = result["trend_line"].values[:, 0, 0]
+
+    assert trend_line.shape == (len(time),)
+    # A straight line has far less spread than the raw seasonal+noise series.
+    assert np.ptp(trend_line) < np.ptp(y)
+    # Its endpoint-to-endpoint slope should match the fitted trend (cm/yr).
+    years_elapsed = (time[-1] - time[0]).days / 365.25
+    implied_slope = (trend_line[-1] - trend_line[0]) / years_elapsed
+    assert implied_slope == pytest.approx(result["trend"].values[0, 0], rel=0.05)
+
+
 def test_fit_trend_is_vectorized_across_pixels():
     rng = np.random.default_rng(3)
     time, y_decline = _synthetic_series(rng, true_trend=-2.0)

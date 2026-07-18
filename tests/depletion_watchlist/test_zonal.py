@@ -56,6 +56,30 @@ def test_aggregate_trend_to_basins_flags_majority_significant_decline():
     assert bool(row["basin_significant_decline"]) is True
 
 
+def test_aggregate_trend_to_basins_ignores_time_dimensioned_extra_variables():
+    # trend.fit_trend's real output also includes trend_line, which has a
+    # time dimension unlike trend/p_value/significant_decline. Mixing dims
+    # in one Dataset used to make to_dataframe() broadcast the time-less
+    # variables across time, multiplying n_pixels by the number of time steps.
+    lats = [0.5]
+    lons = [0.5, 1.5]
+    trend_grid = np.array([[-3.0, -1.0]])
+    significant_grid = np.array([[True, False]])
+    trend_ds = _trend_dataset(lats, lons, trend_grid, significant_grid)
+    trend_ds["trend_line"] = (
+        ("time", "lat", "lon"),
+        np.zeros((5, 1, 2)),
+    )
+    trend_ds = trend_ds.assign_coords(time=np.arange(5))
+
+    basin = gpd.GeoDataFrame({"basin_id": [1]}, geometry=[box(-1, -1, 2, 1)], crs="EPSG:4326")
+
+    result = zonal.aggregate_trend_to_basins(trend_ds, basin, id_column="basin_id")
+
+    row = result.loc[result["basin_id"] == 1].iloc[0]
+    assert row["n_pixels"] == 2  # not 2 * 5
+
+
 def test_aggregate_trend_to_basins_leaves_empty_basin_unflagged():
     lats = [40.5]
     lons = [40.5]

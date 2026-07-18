@@ -11,7 +11,12 @@ import xarray as xr
 
 
 def _trend_to_points(trend_ds: xr.Dataset) -> gpd.GeoDataFrame:
-    df = trend_ds.to_dataframe().reset_index().dropna(subset=["trend"])
+    # Select only the time-less summary variables. trend.fit_trend also
+    # returns trend_line (dims time, lat, lon, for hydrograph overlays) --
+    # to_dataframe() on the whole Dataset would broadcast trend/p_value
+    # across trend_line's time dimension, multiplying every pixel's row by
+    # the number of time steps.
+    df = trend_ds[["trend", "p_value", "significant_decline"]].to_dataframe().reset_index().dropna(subset=["trend"])
     lon_180 = ((df["lon"] + 180) % 360) - 180
     return gpd.GeoDataFrame(
         df,

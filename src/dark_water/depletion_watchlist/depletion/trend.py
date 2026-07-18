@@ -36,7 +36,9 @@ def fit_trend(da: xr.DataArray, dim: str = "time", alpha: float = 0.05) -> xr.Da
 
     `da` must have `dim` as a datetime64 coordinate. Returns a Dataset with
     `trend` (units of `da` per year), `p_value`, and `significant_decline`
-    (trend < 0 and p_value < alpha), on every non-`dim` dimension of `da`.
+    (trend < 0 and p_value < alpha) on every non-`dim` dimension of `da`,
+    plus `trend_line` (the deseasonalized intercept + slope*t component,
+    same shape as `da`) for overlaying on a hydrograph of the raw series.
     """
     da = da.transpose(dim, ...)
     other_dims = [d for d in da.dims if d != dim]
@@ -44,7 +46,8 @@ def fit_trend(da: xr.DataArray, dim: str = "time", alpha: float = 0.05) -> xr.Da
     n_time = da.sizes[dim]
 
     y = da.values.reshape(n_time, -1)
-    x = _design_matrix(_decimal_years(da[dim]))
+    years = _decimal_years(da[dim])
+    x = _design_matrix(years)
     n_params = x.shape[1]
 
     coeffs, _, _, _ = np.linalg.lstsq(x, y, rcond=None)
@@ -61,22 +64,27 @@ def fit_trend(da: xr.DataArray, dim: str = "time", alpha: float = 0.05) -> xr.Da
     r1 = np.clip(r1, -0.99, 0.99)
     n_eff = np.clip(n_time * (1 - r1) / (1 + r1), 3, n_time)
 
-    trend = coeffs[1]
+    trend_flat = coeffs[1]
+    trend_line_flat = coeffs[0][None, :] + years[:, None] * trend_flat[None, :]
+
     se_adjusted = np.sqrt(trend_variance * (n_time / n_eff))
-    t_stat = np.divide(trend, se_adjusted, out=np.zeros_like(trend), where=se_adjusted != 0)
+    t_stat = np.divide(trend_flat, se_adjusted, out=np.zeros_like(trend_flat), where=se_adjusted != 0)
     dof_eff = np.clip(n_eff - n_params, 1, None)
     p_value = 2 * stats.t.sf(np.abs(t_stat), df=dof_eff)
 
-    trend = trend.reshape(other_shape)
+    trend = trend_flat.reshape(other_shape)
     p_value = p_value.reshape(other_shape)
     significant_decline = (trend < 0) & (p_value < alpha)
+    trend_line = trend_line_flat.reshape([n_time, *other_shape])
 
     coords = {d: da.coords[d] for d in other_dims if d in da.coords}
+    coords[dim] = da[dim]
     return xr.Dataset(
         {
             "trend": (other_dims, trend),
             "p_value": (other_dims, p_value),
             "significant_decline": (other_dims, significant_decline),
+            "trend_line": ([dim, *other_dims], trend_line),
         },
         coords=coords,
     )
