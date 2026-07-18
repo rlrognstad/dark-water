@@ -1,6 +1,6 @@
 # Dark Water
 
-A Water Cycle Intelligence product suite for finding and tracking water observability gaps.
+A product suite for finding and tracking water observability gaps.
 
 ## Modules
 
