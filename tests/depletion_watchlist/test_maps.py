@@ -37,6 +37,20 @@ def test_plot_global_trend_map_saves_a_real_figure_not_a_cropped_one(tmp_path):
     assert height > 400
 
 
+def test_plot_global_trend_map_dark_theme_uses_a_dark_surface(tmp_path):
+    output_path = tmp_path / "trend_dark.png"
+
+    result = maps.plot_global_trend_map(_trend_ds(), output_path, theme="dark")
+
+    assert result.exists()
+    # corner pixel is outside the map extent, so it's pure figure facecolor
+    corner = Image.open(output_path).convert("RGB").getpixel((0, 0))
+    # dark theme surface #1a1a19 -> low luminance; light theme's #fcfcfb is
+    # near-white -- this is the cheapest real signal that theme selection
+    # actually changed the rendered output, not just accepted the argument.
+    assert sum(corner) < 200
+
+
 def test_not_significant_mask_does_not_flag_significant_increases():
     # significant_decline (one-sided, from trend.py) would be False for the
     # significant-increase cell -- masking on it would incorrectly fade a

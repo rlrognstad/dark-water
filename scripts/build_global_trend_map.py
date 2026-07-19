@@ -24,6 +24,7 @@ def main() -> None:
     parser.add_argument("--output", type=Path, default=Path("data/processed/figures/global_tws_trend.png"))
     parser.add_argument("--vlim", type=float, default=3.0, help="Symmetric color scale bound, cm/yr")
     parser.add_argument("--alpha", type=float, default=0.05, help="Significance threshold")
+    parser.add_argument("--theme", choices=["light", "dark"], default="light")
     args = parser.parse_args()
 
     existing = sorted(args.jpl_dir.glob("*.nc"))
@@ -33,7 +34,7 @@ def main() -> None:
     land = ds.where(ds["land_mask"] == 1)
     trend_ds = trend.fit_trend(land["lwe_thickness"])
 
-    output_path = maps.plot_global_trend_map(trend_ds, args.output, vlim=args.vlim, alpha=args.alpha)
+    output_path = maps.plot_global_trend_map(trend_ds, args.output, vlim=args.vlim, alpha=args.alpha, theme=args.theme)
     print(f"Saved {output_path}")
 
 
