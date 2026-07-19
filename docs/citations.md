@@ -96,6 +96,18 @@ citing:
 
 - Li, B., Rodell, M., Kumar, S., Beaudoing, H. K., Getirana, A., Zaitchik, B. F., et al. (2019). Global GRACE data assimilation for groundwater and drought monitoring: Advances and challenges. *Water Resources Research*, 55, 7564–7586. https://doi.org/10.1029/2018WR024618
 
+### Darkness axis v1 — GGMN station density (`ingest/stations.py`, `darkness/density.py`)
+
+Verified directly from IGRAC's own dataset metadata API
+(`https://ggis.un-igrac.org/api/v2/datasets/2472/`), not secondhand —
+this also **corrects** an earlier, less-authoritative answer given in
+conversation (a generic web search had surfaced plain "CC BY 4.0"):
+
+- International Groundwater Resources Assessment Centre (IGRAC). *Global Groundwater Monitoring Network (GGMN)*. https://doi.org/10.58154/6Z0Y-DA34
+- License: **CC BY-NC-SA 4.0** (Attribution-NonCommercial-ShareAlike), per `constraints_other` in the dataset's own metadata — not the plain "CC BY" sometimes quoted informally. Relevant if DDW output has any commercial dimension.
+- Required attribution line, verbatim (`attribution` field): "This system includes data provided by various national authorities and organizations, coordinated by the Global Groundwater Monitoring Network (GGMN)."
+- Accessed via the `hydrostations` package's GGMN adapter (IGRAC's GeoServer WFS 2.0 endpoint, `packages/hydrostations/src/hydrostations/adapters/ggmn.py`), not built independently in dark-water.
+
 ---
 
 ## Not yet verified / open
@@ -109,8 +121,6 @@ citing:
   local/shallow aquifers), per the bundled metadata PDF, not a simple
   aquifer-type label. Worth knowing before using it to distinguish basin
   scales for tiering.
-- **GGMN citation** for the eventual darkness-axis / station-density work —
-  not yet pulled, since that module hasn't started.
 - **InSAR subsidence citations** (Iran, Mexico, Tulare Basin studies
   mentioned in the concept doc) — not yet verified, since InSAR is
   explicitly deferred past v1 in the pilot scope.
