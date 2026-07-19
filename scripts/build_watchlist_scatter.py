@@ -50,6 +50,7 @@ def main() -> None:
         "--distribution-output", type=Path, default=Path("data/processed/figures/darkness_distribution.png")
     )
     parser.add_argument("--map-output", type=Path, default=Path("data/processed/figures/watchlist_tier_map.png"))
+    parser.add_argument("--map-theme", choices=["light", "dark"], default="light")
     parser.add_argument("--top-n", type=int, default=10)
     parser.add_argument("--top-basins-output", type=Path, default=Path("data/processed/top_tier1_basins.csv"))
     parser.add_argument("--table-output", type=Path, default=Path("data/processed/watchlist.parquet"))
@@ -90,7 +91,7 @@ def main() -> None:
     )
     print(f"Saved {distribution_path}")
 
-    map_path = tier_map.plot_tier_map(watchlist, args.map_output)
+    map_path = tier_map.plot_tier_map(watchlist, args.map_output, theme=args.map_theme)
     print(f"Saved {map_path}")
 
     top_basins = tables.rank_top_basins(watchlist, id_column="HYBAS_ID", n=args.top_n)
