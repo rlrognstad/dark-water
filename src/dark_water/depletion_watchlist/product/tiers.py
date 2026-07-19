@@ -19,6 +19,16 @@ TIER_2 = "2 -- Dim & Falling"
 TIER_3 = "3 -- Watched & Falling"
 TIER_ORDER = [TIER_1, TIER_2, TIER_3]
 
+# dataviz skill's status palette (reserved, never themed): tier color encodes
+# monitoring state (dark/dim/watched), not water-supply health or a
+# categorical series -- shared by every product view of the watchlist so a
+# tier always reads the same color regardless of which chart it's in.
+TIER_COLORS = {
+    TIER_1: "#d03b3b",  # critical
+    TIER_2: "#fab219",  # warning
+    TIER_3: "#0ca30c",  # good (well-observed, not "healthy aquifer")
+}
+
 
 def join_depletion_and_darkness(
     depletion: gpd.GeoDataFrame, darkness: pd.DataFrame, id_column: str

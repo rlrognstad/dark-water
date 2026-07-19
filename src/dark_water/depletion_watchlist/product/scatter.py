@@ -15,13 +15,8 @@ from pathlib import Path
 import geopandas as gpd
 import matplotlib.pyplot as plt
 
-from dark_water.depletion_watchlist.product.tiers import TIER_1, TIER_2, TIER_3, TIER_ORDER
+from dark_water.depletion_watchlist.product.tiers import TIER_1, TIER_COLORS, TIER_ORDER
 
-_TIER_COLORS = {
-    TIER_1: "#d03b3b",  # critical
-    TIER_2: "#fab219",  # warning
-    TIER_3: "#0ca30c",  # good (well-observed, not "healthy aquifer")
-}
 _CONTEXT_COLOR = "#c3c2b7"
 _INK = "#0b0b0b"
 _SECONDARY_INK = "#52514e"
@@ -42,7 +37,7 @@ def plot_watchlist_scatter(
     Basins with no tier (not significantly declining) are drawn as small
     muted context points, so the reader can see where the watchlist sits
     relative to the full basin population. Tiered basins are drawn on top,
-    colored by status (see `_TIER_COLORS`), with a legend -- tier color is
+    colored by status (see `tiers.TIER_COLORS`), with a legend -- tier color is
     never the only channel carrying tier identity, since the legend and
     (for the top `label_top_n` Tier-1 basins, if `label_column` is given)
     direct labels both name it too.
@@ -67,7 +62,7 @@ def plot_watchlist_scatter(
             subset[x_column],
             subset[y_column],
             s=28,
-            color=_TIER_COLORS[tier],
+            color=TIER_COLORS[tier],
             edgecolors="#fcfcfb",
             linewidths=0.5,
             label=f"{tier} (n={len(subset)})",

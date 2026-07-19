@@ -9,6 +9,10 @@ Reuses whatever's already been fetched by build_global_trend_map.py and
 build_darkness_axis.py (JPL mascons, HydroBASINS level-4 polygons, and the
 processed darkness-by-basin table) rather than re-downloading -- run those
 scripts first if their outputs aren't present yet.
+
+Produces, per run: the watchlist table (GeoParquet, every assessed basin),
+the depletion x darkness scatter, the darkness-score distribution, a
+geographic tier choropleth, and a ranked Tier-1 top-N CSV for dossier work.
 """
 
 import argparse
@@ -20,7 +24,7 @@ import pandas as pd
 from dark_water.common.basins import HYDROBASINS_CONTINENTS, download_hydrobasins, load_basins
 from dark_water.depletion_watchlist.depletion import trend, zonal
 from dark_water.depletion_watchlist.ingest import grace
-from dark_water.depletion_watchlist.product import darkness_distribution, scatter, tiers
+from dark_water.depletion_watchlist.product import darkness_distribution, scatter, tables, tier_map, tiers
 
 
 def _load_all_hydrobasins(basins_dir: Path, level: int) -> gpd.GeoDataFrame:
@@ -45,6 +49,9 @@ def main() -> None:
     parser.add_argument(
         "--distribution-output", type=Path, default=Path("data/processed/figures/darkness_distribution.png")
     )
+    parser.add_argument("--map-output", type=Path, default=Path("data/processed/figures/watchlist_tier_map.png"))
+    parser.add_argument("--top-n", type=int, default=10)
+    parser.add_argument("--top-basins-output", type=Path, default=Path("data/processed/top_tier1_basins.csv"))
     parser.add_argument("--table-output", type=Path, default=Path("data/processed/watchlist.parquet"))
     args = parser.parse_args()
 
@@ -82,6 +89,13 @@ def main() -> None:
         watchlist, args.distribution_output, dark_threshold=args.dark_threshold, dim_threshold=args.dim_threshold
     )
     print(f"Saved {distribution_path}")
+
+    map_path = tier_map.plot_tier_map(watchlist, args.map_output)
+    print(f"Saved {map_path}")
+
+    top_basins = tables.rank_top_basins(watchlist, id_column="HYBAS_ID", n=args.top_n)
+    top_basins_path = tables.save_table(top_basins, args.top_basins_output)
+    print(f"Saved {top_basins_path}")
 
 
 if __name__ == "__main__":
