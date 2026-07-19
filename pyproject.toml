@@ -22,6 +22,7 @@ dependencies = [
     "matplotlib>=3.11.1",
     "hydrostations",
     "httpx>=0.27",
+    "pyarrow>=17.0",
 ]
 
 [dependency-groups]

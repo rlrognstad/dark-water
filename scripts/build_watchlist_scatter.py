@@ -20,7 +20,7 @@ import pandas as pd
 from dark_water.common.basins import HYDROBASINS_CONTINENTS, download_hydrobasins, load_basins
 from dark_water.depletion_watchlist.depletion import trend, zonal
 from dark_water.depletion_watchlist.ingest import grace
-from dark_water.depletion_watchlist.product import scatter, tiers
+from dark_water.depletion_watchlist.product import darkness_distribution, scatter, tiers
 
 
 def _load_all_hydrobasins(basins_dir: Path, level: int) -> gpd.GeoDataFrame:
@@ -37,12 +37,15 @@ def main() -> None:
     parser.add_argument("--jpl-dir", type=Path, default=Path("data/raw/grace/jpl"))
     parser.add_argument("--basins-dir", type=Path, default=Path("data/raw/basins/hydrobasins"))
     parser.add_argument("--level", type=int, default=4, help="HydroBASINS Pfafstetter level")
-    parser.add_argument("--darkness-input", type=Path, default=Path("data/processed/darkness_by_basin.gpkg"))
+    parser.add_argument("--darkness-input", type=Path, default=Path("data/processed/darkness_by_basin.parquet"))
     parser.add_argument("--alpha", type=float, default=0.05, help="Significance threshold")
     parser.add_argument("--dark-threshold", type=float, default=2 / 3)
     parser.add_argument("--dim-threshold", type=float, default=1 / 3)
     parser.add_argument("--output", type=Path, default=Path("data/processed/figures/watchlist_scatter.png"))
-    parser.add_argument("--table-output", type=Path, default=Path("data/processed/watchlist.gpkg"))
+    parser.add_argument(
+        "--distribution-output", type=Path, default=Path("data/processed/figures/darkness_distribution.png")
+    )
+    parser.add_argument("--table-output", type=Path, default=Path("data/processed/watchlist.parquet"))
     args = parser.parse_args()
 
     existing = sorted(args.jpl_dir.glob("*.nc"))
@@ -58,7 +61,7 @@ def main() -> None:
     depletion = zonal.aggregate_trend_to_basins(trend_ds, basins, id_column="HYBAS_ID")
 
     print(f"Loading darkness scores from {args.darkness_input}...")
-    darkness = gpd.read_file(args.darkness_input)
+    darkness = gpd.read_parquet(args.darkness_input)
 
     watchlist = tiers.join_depletion_and_darkness(depletion, darkness, id_column="HYBAS_ID")
     watchlist["tier"] = tiers.assign_tiers(
@@ -66,7 +69,7 @@ def main() -> None:
     )
 
     args.table_output.parent.mkdir(parents=True, exist_ok=True)
-    watchlist.to_file(args.table_output, driver="GPKG")
+    watchlist.to_parquet(args.table_output)
     print(f"Saved {args.table_output}")
 
     for tier in tiers.TIER_ORDER:
@@ -74,6 +77,11 @@ def main() -> None:
 
     output_path = scatter.plot_watchlist_scatter(watchlist, args.output)
     print(f"Saved {output_path}")
+
+    distribution_path = darkness_distribution.plot_darkness_distribution(
+        watchlist, args.distribution_output, dark_threshold=args.dark_threshold, dim_threshold=args.dim_threshold
+    )
+    print(f"Saved {distribution_path}")
 
 
 if __name__ == "__main__":

@@ -3,7 +3,7 @@
 
 Usage:
     uv run scripts/build_darkness_axis.py
-    uv run scripts/build_darkness_axis.py --output data/processed/darkness_by_basin.gpkg
+    uv run scripts/build_darkness_axis.py --output data/processed/darkness_by_basin.parquet
 
 Fetches the global GGMN groundwater station registry (via hydrostations)
 and HydroBASINS level-4 polygons (downloading whatever continents aren't
@@ -35,7 +35,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--basins-dir", type=Path, default=Path("data/raw/basins/hydrobasins"))
     parser.add_argument("--level", type=int, default=4, help="HydroBASINS Pfafstetter level")
-    parser.add_argument("--output", type=Path, default=Path("data/processed/darkness_by_basin.gpkg"))
+    parser.add_argument("--output", type=Path, default=Path("data/processed/darkness_by_basin.parquet"))
     parser.add_argument("--max-inactive-years", type=float, default=5.0)
     args = parser.parse_args()
 
@@ -54,7 +54,7 @@ def main() -> None:
     result["darkness_score"] = density.darkness_score(result["station_density"])
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    result.to_file(args.output, driver="GPKG")
+    result.to_parquet(args.output)
     print(f"Saved {args.output}")
     print(f"Basins with zero GGMN stations: {(result['n_stations'] == 0).sum()} / {len(result)}")
 
