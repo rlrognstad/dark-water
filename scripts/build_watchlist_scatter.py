@@ -22,8 +22,8 @@ import geopandas as gpd
 import pandas as pd
 
 from dark_water.common.basins import HYDROBASINS_CONTINENTS, download_hydrobasins, load_basins
-from dark_water.depletion_watchlist.depletion import trend, zonal
-from dark_water.depletion_watchlist.ingest import grace
+from dark_water.depletion_watchlist.depletion import attribution, precipitation, trend, zonal
+from dark_water.depletion_watchlist.ingest import grace, lsm
 from dark_water.depletion_watchlist.product import darkness_distribution, scatter, tables, tier_map, tiers
 
 
@@ -54,13 +54,48 @@ def main() -> None:
     parser.add_argument("--top-n", type=int, default=10)
     parser.add_argument("--top-basins-output", type=Path, default=Path("data/processed/top_tier1_basins.csv"))
     parser.add_argument("--table-output", type=Path, default=Path("data/processed/watchlist.parquet"))
+    parser.add_argument(
+        "--scale-factor",
+        type=Path,
+        default=None,
+        help="JPL gain-factor ancillary .nc. Omitting it leaves leakage uncorrected and biases trends low.",
+    )
+    parser.add_argument("--land-mask", type=Path, default=None, help="JPL land-mask ancillary .nc")
+    parser.add_argument(
+        "--gldas-dir",
+        type=Path,
+        default=None,
+        help="GLDAS dir (any single model) to control the trend for accumulated precipitation.",
+    )
+    parser.add_argument(
+        "--min-unexplained-fraction",
+        type=float,
+        default=None,
+        help="Require this share of a basin's decline to survive the precipitation control before tiering it.",
+    )
     args = parser.parse_args()
+
+    if args.min_unexplained_fraction is not None and args.gldas_dir is None:
+        parser.error("--min-unexplained-fraction needs --gldas-dir to compute the covariate")
 
     existing = sorted(args.jpl_dir.glob("*.nc"))
     jpl_path = existing[0] if existing else grace.download_jpl_mascons(args.jpl_dir)
-    ds = grace.load_mascons(jpl_path)
-    land = ds.where(ds["land_mask"] == 1)
+    ds = grace.load_mascons(jpl_path, scale_factor_path=args.scale_factor, land_mask_path=args.land_mask)
+    if args.scale_factor is None:
+        print("WARNING: no --scale-factor given; mascon leakage uncorrected, trends biased low.")
+    land = ds if args.land_mask is not None else ds.where(ds["land_mask"] == 1)
     trend_ds = trend.fit_trend(land["lwe_thickness"], alpha=args.alpha)
+
+    if args.gldas_dir is not None:
+        gldas_paths = sorted(args.gldas_dir.glob("**/*.nc4"))
+        if not gldas_paths:
+            parser.error(f"No GLDAS granules under {args.gldas_dir}")
+        print(f"Controlling trend for accumulated precipitation ({len(gldas_paths)} GLDAS granules)...")
+        precip = precipitation.precipitation_depth(lsm.load_gldas(gldas_paths))
+        cumulative = precipitation.cumulative_anomaly(attribution._to_grace_grid(precip, land["lwe_thickness"]))
+        trend_ds = precipitation.adjusted_trend(
+            attribution.monthly_mean(land["lwe_thickness"]), cumulative, alpha=args.alpha
+        )
 
     print(f"Loading HydroBASINS level {args.level} for all continents...")
     basins = _load_all_hydrobasins(args.basins_dir, args.level)
@@ -73,8 +108,20 @@ def main() -> None:
 
     watchlist = tiers.join_depletion_and_darkness(depletion, darkness, id_column="HYBAS_ID")
     watchlist["tier"] = tiers.assign_tiers(
-        watchlist, dark_threshold=args.dark_threshold, dim_threshold=args.dim_threshold
+        watchlist,
+        dark_threshold=args.dark_threshold,
+        dim_threshold=args.dim_threshold,
+        min_unexplained_fraction=args.min_unexplained_fraction,
     )
+
+    if "mean_fraction_unexplained" in watchlist:
+        declining = watchlist["basin_significant_decline"].astype(bool)
+        share = watchlist.loc[declining, "mean_fraction_unexplained"]
+        print(
+            f"Precipitation control: median {share.median():.2f} of the decline unexplained "
+            f"across {int(declining.sum())} declining basins; "
+            f"{int((share < 0.5).sum())} are majority precipitation-driven."
+        )
 
     args.table_output.parent.mkdir(parents=True, exist_ok=True)
     watchlist.to_parquet(args.table_output)

@@ -127,6 +127,56 @@ module docstring for why).
   lag-1 residual autocorrelation, since monthly TWS series are strongly
   autocorrelated and a naive OLS p-value overstates confidence.
 
+## Example: how much of a decline is just weather?
+
+The tiers say "... & Falling" and the product describes basins "drawn down
+beyond any local capacity to verify it" — abstraction language. A
+significant negative trend alone does not support that: the Central Valley
+validation below spans the 2012–2016 and 2020–2022 droughts. Refit the
+trend with accumulated precipitation as a covariate and report what
+survives.
+
+```python
+from dark_water.depletion_watchlist.depletion import attribution, precipitation
+
+precip = precipitation.precipitation_depth(models["noah"])          # cm/month
+on_grace = attribution._to_grace_grid(precip, land["lwe_thickness"])
+cumulative = precipitation.cumulative_anomaly(on_grace)
+
+result = precipitation.adjusted_trend(attribution.monthly_mean(land["lwe_thickness"]), cumulative)
+```
+
+`result["fraction_unexplained"]` is the share of the trend that the weather
+does not account for. It is not clipped at 1 — above 1 means the basin lost
+storage *through* a wet period, which is stronger evidence of abstraction
+than a decline during drought.
+
+`Rainf_f_tavg` already ships inside the GLDAS granules the attribution
+ensemble downloads, so this costs no extra data. Any one model's forcing
+will do; GLDAS-2.1 shares its precipitation forcing across Noah/VIC/CLSM.
+
+In the pipeline:
+
+```bash
+uv run scripts/build_watchlist_scatter.py --gldas-dir data/raw/gldas/noah
+uv run scripts/build_watchlist_scatter.py --gldas-dir data/raw/gldas/noah --min-unexplained-fraction 0.5
+```
+
+The first reports the covariate and leaves tiers alone. The second also
+refuses to tier a basin whose decline precipitation mostly explains — a
+deliberate editorial choice, off by default so adding the covariate never
+silently reassigns tiers.
+
+## Mascon gain factor (do not skip)
+
+`grace.load_mascons` takes optional `scale_factor_path` and
+`land_mask_path`. The gain grid is a separate ancillary file in the mascon
+collection; without it, leakage from the gravity inversion damps
+basin-scale amplitudes and every trend comes out biased low. It is not
+fetched automatically because the correct file is release-specific and
+pairing the wrong release's grid to a granule fails silently. Both scripts
+warn when it is omitted.
+
 ## Verification
 
 Central Valley, California (a known groundwater crisis basin) is the

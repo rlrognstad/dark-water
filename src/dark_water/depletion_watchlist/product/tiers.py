@@ -50,6 +50,8 @@ def assign_tiers(
     darkness_column: str = "darkness_score",
     dark_threshold: float = 2 / 3,
     dim_threshold: float = 1 / 3,
+    min_unexplained_fraction: float | None = None,
+    unexplained_column: str = "mean_fraction_unexplained",
 ) -> pd.Series:
     """Assign a tier label to each basin, or `None` if not significantly declining.
 
@@ -59,9 +61,31 @@ def assign_tiers(
     basin's tier depend on which other declining basins happened to be in
     the same run; a fixed cut on the global score keeps tier assignment
     stable as the declining population changes.
+
+    `min_unexplained_fraction`, if set, additionally requires that at least
+    that share of a basin's decline survive controlling for accumulated
+    precipitation (see `depletion/precipitation.py`). The tiers are
+    abstraction language -- "drawn down beyond any local capacity to verify
+    it" -- and a decline that precipitation fully accounts for is a dry
+    decade, not a basin being pumped past its ability to notice. It is
+    opt-in and off by default so that adding the covariate to the pipeline
+    does not silently reassign tiers in an existing run; turning it on is a
+    deliberate editorial choice about what the watchlist is claiming.
     """
     declining = gdf[depletion_column].astype(bool)
     darkness = gdf[darkness_column]
+
+    if min_unexplained_fraction is not None:
+        if unexplained_column not in gdf:
+            raise KeyError(
+                f"{unexplained_column!r} not in the basin table -- run the trend through "
+                "precipitation.adjusted_trend before gating on it"
+            )
+        # NaN means the ratio was undefined (zero total trend), not that the
+        # basin passed. Comparison against NaN is already False; this is
+        # spelled out because silently un-tiering a basin for a missing
+        # covariate is the failure mode worth being explicit about.
+        declining = declining & (gdf[unexplained_column] >= min_unexplained_fraction)
 
     tier = pd.Series(pd.NA, index=gdf.index, dtype="object")
     tier[declining & (darkness >= dark_threshold)] = TIER_1

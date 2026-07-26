@@ -10,13 +10,22 @@ import geopandas as gpd
 import xarray as xr
 
 
-def _trend_to_points(trend_ds: xr.Dataset) -> gpd.GeoDataFrame:
+def _summary_variables(trend_ds: xr.Dataset, dim: str = "time") -> list:
     # Select only the time-less summary variables. trend.fit_trend also
     # returns trend_line (dims time, lat, lon, for hydrograph overlays) --
     # to_dataframe() on the whole Dataset would broadcast trend/p_value
     # across trend_line's time dimension, multiplying every pixel's row by
     # the number of time steps.
-    df = trend_ds[["trend", "p_value", "significant_decline"]].to_dataframe().reset_index().dropna(subset=["trend"])
+    #
+    # Detected rather than hardcoded so that the richer Datasets from
+    # precipitation.adjusted_trend (total_trend, precip_explained_trend,
+    # fraction_unexplained) reach the basin table without this module
+    # needing to know their names.
+    return [name for name, var in trend_ds.data_vars.items() if dim not in var.dims]
+
+
+def _trend_to_points(trend_ds: xr.Dataset) -> gpd.GeoDataFrame:
+    df = trend_ds[_summary_variables(trend_ds)].to_dataframe().reset_index().dropna(subset=["trend"])
     lon_180 = ((df["lon"] + 180) % 360) - 180
     return gpd.GeoDataFrame(
         df,
@@ -35,15 +44,22 @@ def aggregate_trend_to_basins(
     `majority_threshold` of contributing pixels individually significant)
     to a copy of `basin_polygons`. Basins with no contributing pixels (e.g.
     smaller than the mascon grid) get NaN/0, not dropped.
+
+    Any further time-less variable on `trend_ds` is carried through as
+    `mean_<name>` -- so a Dataset from `precipitation.adjusted_trend`
+    arrives with `mean_fraction_unexplained` alongside the rest.
     """
     points = _trend_to_points(trend_ds)
     joined = gpd.sjoin(points, basin_polygons[[id_column, "geometry"]], predicate="within", how="inner")
+
+    extra = [c for c in _summary_variables(trend_ds) if c not in ("trend", "p_value", "significant_decline")]
 
     grouped = joined.groupby(id_column)
     stats = grouped.agg(
         mean_trend=("trend", "mean"),
         n_pixels=("trend", "size"),
         frac_pixels_significant_decline=("significant_decline", "mean"),
+        **{f"mean_{name}": (name, "mean") for name in extra},
     )
     stats["basin_significant_decline"] = (stats["mean_trend"] < 0) & (
         stats["frac_pixels_significant_decline"] > majority_threshold

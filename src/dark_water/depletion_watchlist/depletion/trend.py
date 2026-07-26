@@ -31,6 +31,32 @@ def _design_matrix(years: np.ndarray) -> np.ndarray:
     return np.stack(columns, axis=1)  # (n_time, n_params); trend is column 1
 
 
+def trend_p_value(
+    residuals: np.ndarray, trend: np.ndarray, trend_variance: np.ndarray, n_time: int, n_params: int
+) -> np.ndarray:
+    """Two-sided p-value for a fitted trend, corrected for lag-1 residual autocorrelation.
+
+    Shared with `precipitation.py`, which fits the same trend with an extra
+    covariate and needs the identical correction -- a precipitation-adjusted
+    trend tested by a naive OLS p-value would be no more trustworthy than
+    the unadjusted one.
+
+    `residuals` is (n_time, n_pixels); `trend` and `trend_variance` are
+    (n_pixels,). Follows Dawdy & Matalas (1964): inflate the standard error
+    by sqrt(n / n_eff), where n_eff discounts for serial correlation.
+    """
+    r1_num = (residuals[1:] * residuals[:-1]).sum(axis=0)
+    r1_den = (residuals[:-1] ** 2).sum(axis=0)
+    r1 = np.divide(r1_num, r1_den, out=np.zeros_like(r1_num), where=r1_den != 0)
+    r1 = np.clip(r1, -0.99, 0.99)
+    n_eff = np.clip(n_time * (1 - r1) / (1 + r1), 3, n_time)
+
+    se_adjusted = np.sqrt(trend_variance * (n_time / n_eff))
+    t_stat = np.divide(trend, se_adjusted, out=np.zeros_like(trend), where=se_adjusted != 0)
+    dof_eff = np.clip(n_eff - n_params, 1, None)
+    return 2 * stats.t.sf(np.abs(t_stat), df=dof_eff)
+
+
 def fit_trend(da: xr.DataArray, dim: str = "time", alpha: float = 0.05) -> xr.Dataset:
     """Fit a trend + seasonal-harmonics model per pixel and test trend significance.
 
@@ -58,19 +84,10 @@ def fit_trend(da: xr.DataArray, dim: str = "time", alpha: float = 0.05) -> xr.Da
     xtx_inv = np.linalg.inv(x.T @ x)
     trend_variance = sigma2 * xtx_inv[1, 1]
 
-    r1_num = (residuals[1:] * residuals[:-1]).sum(axis=0)
-    r1_den = (residuals[:-1] ** 2).sum(axis=0)
-    r1 = np.divide(r1_num, r1_den, out=np.zeros_like(r1_num), where=r1_den != 0)
-    r1 = np.clip(r1, -0.99, 0.99)
-    n_eff = np.clip(n_time * (1 - r1) / (1 + r1), 3, n_time)
-
     trend_flat = coeffs[1]
     trend_line_flat = coeffs[0][None, :] + years[:, None] * trend_flat[None, :]
 
-    se_adjusted = np.sqrt(trend_variance * (n_time / n_eff))
-    t_stat = np.divide(trend_flat, se_adjusted, out=np.zeros_like(trend_flat), where=se_adjusted != 0)
-    dof_eff = np.clip(n_eff - n_params, 1, None)
-    p_value = 2 * stats.t.sf(np.abs(t_stat), df=dof_eff)
+    p_value = trend_p_value(residuals, trend_flat, trend_variance, n_time, n_params)
 
     trend = trend_flat.reshape(other_shape)
     p_value = p_value.reshape(other_shape)
