@@ -39,6 +39,35 @@ def test_aggregate_trend_to_basins_assigns_by_centroid_and_handles_lon_wraparoun
     assert bool(row["basin_significant_decline"]) is False  # exactly at threshold, not > 0.5
 
 
+def test_aggregate_trend_to_basins_carries_extra_summary_variables():
+    # precipitation.adjusted_trend adds columns this module does not name;
+    # they must reach the basin table as mean_<name> without zonal.py
+    # knowing about them.
+    trend_ds = _trend_dataset([0.5], [0.5, 1.5], np.array([[-3.0, -1.0]]), np.array([[True, True]]))
+    trend_ds["fraction_unexplained"] = (("lat", "lon"), np.array([[0.8, 0.4]]))
+    trend_ds["total_trend"] = (("lat", "lon"), np.array([[-4.0, -2.0]]))
+
+    basin = gpd.GeoDataFrame({"basin_id": [1]}, geometry=[box(0, 0, 2, 1)], crs="EPSG:4326")
+
+    row = zonal.aggregate_trend_to_basins(trend_ds, basin, id_column="basin_id").iloc[0]
+
+    assert np.isclose(row["mean_fraction_unexplained"], 0.6)
+    assert np.isclose(row["mean_total_trend"], -3.0)
+
+
+def test_aggregate_trend_to_basins_ignores_time_varying_variables():
+    # trend_line has a time dim; including it would broadcast every pixel's
+    # row by the number of timesteps and inflate n_pixels.
+    trend_ds = _trend_dataset([0.5], [0.5, 1.5], np.array([[-3.0, -1.0]]), np.array([[True, True]]))
+    trend_ds["trend_line"] = (("time", "lat", "lon"), np.zeros((5, 1, 2)))
+
+    basin = gpd.GeoDataFrame({"basin_id": [1]}, geometry=[box(0, 0, 2, 1)], crs="EPSG:4326")
+
+    row = zonal.aggregate_trend_to_basins(trend_ds, basin, id_column="basin_id").iloc[0]
+
+    assert row["n_pixels"] == 2
+
+
 def test_aggregate_trend_to_basins_flags_majority_significant_decline():
     lats = [0.5]
     lons = [0.5, 1.5, 2.5]

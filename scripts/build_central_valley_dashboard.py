@@ -23,6 +23,13 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--jpl-dir", type=Path, default=Path("data/raw/grace/jpl"))
     parser.add_argument("--gldas-dir", type=Path, default=Path("data/raw/gldas"))
+    parser.add_argument(
+        "--scale-factor",
+        type=Path,
+        default=None,
+        help="JPL gain-factor ancillary .nc. Omitting it leaves leakage uncorrected and biases amplitudes low.",
+    )
+    parser.add_argument("--land-mask", type=Path, default=None, help="JPL land-mask ancillary .nc")
     parser.add_argument("--output", type=Path, default=Path("data/processed/figures/central_valley_case_study.png"))
     parser.add_argument("--lat", type=float, default=37.0)
     parser.add_argument("--lon", type=float, default=239.0, help="0-360 convention, matching GRACE's grid")
@@ -33,9 +40,10 @@ def main() -> None:
 
     existing_jpl = sorted(args.jpl_dir.glob("*.nc"))
     jpl_path = existing_jpl[0] if existing_jpl else grace.download_jpl_mascons(args.jpl_dir)
-    ds = grace.load_mascons(jpl_path)
+    ds = grace.load_mascons(jpl_path, scale_factor_path=args.scale_factor, land_mask_path=args.land_mask)
+    if args.scale_factor is None:
+        print("WARNING: no --scale-factor given; mascon leakage uncorrected, amplitudes biased low.")
     grace_tws = ds["lwe_thickness"].sel(time=slice(args.start, args.end))
-    grace_tws_anomaly = grace_tws - grace_tws.mean(dim="time")
 
     models = {}
     for name in ["noah", "vic", "clsm"]:
@@ -44,9 +52,14 @@ def main() -> None:
         paths = existing if existing else lsm.download_gldas(name, model_dir, temporal=(args.start, args.end))
         models[name] = lsm.load_gldas(paths)
 
-    ensemble = attribution.ensemble_attribution(grace_tws_anomaly, models)
+    ensemble = attribution.ensemble_attribution(grace_tws, models)
 
-    point_tws = grace_tws_anomaly.sel(lat=args.lat, lon=args.lon, method="nearest")
+    # Center the plotted TWS hydrograph on the same months the ensemble was
+    # centered on. The two curves share an axis, so a TWS baseline taken over
+    # the full GRACE record and a GWS baseline taken over the GRACE-GLDAS
+    # overlap would offset one against the other purely by construction.
+    grace_monthly = attribution.monthly_mean(grace_tws).sel(time=ensemble["time"])
+    point_tws = (grace_monthly - grace_monthly.mean(dim="time")).sel(lat=args.lat, lon=args.lon, method="nearest")
     point_ensemble = ensemble.sel(lat=args.lat, lon=args.lon, method="nearest")
 
     output_path = dashboards.plot_basin_case_study(point_tws, point_ensemble, args.output, basin_name=args.basin_name)

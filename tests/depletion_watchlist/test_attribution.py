@@ -132,6 +132,90 @@ def test_groundwater_storage_anomaly_reflects_lsm_time_variation():
     assert result.values[0, 0, 0] > result.values[-1, 0, 0]
 
 
+def test_to_grace_grid_interpolates_across_the_prime_meridian():
+    # GLDAS cell centers stop at 0.5 and 359.5 after the 0-360 conversion;
+    # GRACE's grid runs past both. Without periodic padding these columns
+    # fall outside the interpolation domain and come back NaN.
+    lsm = xr.Dataset(
+        {
+            "SoilMoi0_10cm_inst": (("time", "lat", "lon"), np.full((1, 2, 4), 10.0)),
+            "SoilMoi10_40cm_inst": (("time", "lat", "lon"), np.zeros((1, 2, 4))),
+            "SoilMoi40_100cm_inst": (("time", "lat", "lon"), np.zeros((1, 2, 4))),
+            "SoilMoi100_200cm_inst": (("time", "lat", "lon"), np.zeros((1, 2, 4))),
+            "SWE_inst": (("time", "lat", "lon"), np.zeros((1, 2, 4))),
+            "CanopInt_inst": (("time", "lat", "lon"), np.zeros((1, 2, 4))),
+        },
+        coords={
+            "time": _GLDAS_MONTH_START[:1],
+            "lat": [10.0, 20.0],
+            "lon": [-179.5, -0.5, 0.5, 179.5],
+        },
+    )
+    grace_da = xr.DataArray(
+        np.zeros((1, 1, 2)),
+        dims=("time", "lat", "lon"),
+        coords={"time": _GRACE_MID_MONTH[:1], "lat": [15.0], "lon": [0.125, 359.875]},
+    )
+
+    regridded = attribution._to_grace_grid(attribution._noah_non_gw_storage(lsm), grace_da)
+
+    assert not np.isnan(regridded.values).any()
+    assert np.allclose(regridded.values, 1.0)  # 10 kg/m^2 = 1 cm, uniform
+
+
+def test_baselines_are_removed_over_common_months_only():
+    # GRACE carries a 4th month that GLDAS does not -- stand-in for the
+    # 2017-06..2018-05 GRACE/GRACE-FO gap and the scattered missing months,
+    # which GLDAS does not share. With the LSM constant, the whole residual
+    # is GRACE's own anomaly, so it must be centered on the 3 shared months.
+    grace_tws = _grace_da([0.0, 0.0, 0.0, 100.0])
+    lsm = _noah_ds(soil_layers_kg_m2=[500.0, 0.0, 0.0, 0.0], swe_kg_m2=0.0, canopy_kg_m2=0.0, n=3)
+
+    result = attribution.groundwater_storage_anomaly(grace_tws, lsm, "noah")
+
+    assert result.sizes["time"] == 3
+    assert np.allclose(result.values, 0.0)
+
+
+def test_result_does_not_depend_on_the_callers_baseline_choice():
+    # The old dashboard de-meaned GRACE over its full record before calling
+    # in, while attribution differenced only the shared months -- so the
+    # difference between the two baselines survived as a constant offset in
+    # the residual. Output must now be invariant to what the caller passes.
+    lsm = _noah_ds(soil_layers_kg_m2=[500.0, 0.0, 0.0, 0.0], swe_kg_m2=0.0, canopy_kg_m2=0.0, n=3)
+    raw = _grace_da([0.0, 0.0, 0.0, 100.0])
+    pre_centered = raw - raw.mean(dim="time")  # what the caller used to do
+
+    from_raw = attribution.groundwater_storage_anomaly(raw, lsm, "noah")
+    from_pre_centered = attribution.groundwater_storage_anomaly(pre_centered, lsm, "noah")
+
+    assert np.allclose(from_raw.values, from_pre_centered.values)
+    assert np.allclose(from_raw.mean(dim="time").values, 0.0)
+
+
+def test_ensemble_spread_is_not_inflated_by_uneven_model_coverage():
+    # VIC stops a month early. A union-join concat would pad it with NaN and
+    # poison ensemble_min/max on that month.
+    grace_tws = _grace_da([0.0, 0.0, 0.0, 0.0])
+    noah_ds = _noah_ds(soil_layers_kg_m2=[0.0, 0.0, 0.0, 0.0], swe_kg_m2=0.0, canopy_kg_m2=0.0, n=4)
+    vic_ds = xr.Dataset(
+        {
+            "SoilMoi0_30cm_inst": _grid_var(np.full(3, 100.0)),
+            "SoilMoi_depth2_inst": _grid_var(np.full(3, 0.0)),
+            "SoilMoi_depth3_inst": _grid_var(np.full(3, 0.0)),
+            "SWE_inst": _grid_var(np.full(3, 0.0)),
+            "CanopInt_inst": _grid_var(np.full(3, 0.0)),
+        },
+        coords={"time": _GLDAS_MONTH_START[:3], "lat": _LSM_LAT, "lon": _LSM_LON},
+    )
+
+    result = attribution.ensemble_attribution(grace_tws, {"noah": noah_ds, "vic": vic_ds})
+
+    assert result.sizes["time"] == 3
+    assert not np.isnan(result["ensemble_spread"].values).any()
+    assert np.allclose(result["ensemble_spread"].values, 0.0, atol=1e-10)
+
+
 def test_ensemble_attribution_reports_mean_and_spread_across_models():
     grace_tws_anomaly = _grace_da([0.0, 0.0, 0.0, 0.0])
     noah_ds = _noah_ds(soil_layers_kg_m2=[0.0, 0.0, 0.0, 0.0], swe_kg_m2=0.0, canopy_kg_m2=0.0)
